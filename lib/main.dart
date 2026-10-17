@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'firebase_config.dart';
+import 'social.dart';
 
 const accents = <String, Color>{
   'Bleu': Color(0xFF3B82F6),
@@ -18,8 +22,9 @@ const brand = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight);
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: firebaseOptions);
   runApp(const AeroApp());
 }
 
@@ -33,27 +38,15 @@ class _AeroAppState extends State<AeroApp> {
   SharedPreferences? p;
   final Map<String, String> cfg = {'pseudo': '', 'sb': '', 'accent': 'Bleu', 'mode': '2'};
 
-  String? storageErr;
-
   @override
   void initState() {
     super.initState();
-    load();
-  }
-
-  Future<void> load() async {
-    SharedPreferences x;
-    try {
-      x = await SharedPreferences.getInstance().timeout(const Duration(seconds: 5));
-    } catch (e) {
-      storageErr = '$e';
-      SharedPreferences.setMockInitialValues({});
-      x = await SharedPreferences.getInstance();
-    }
-    for (final k in cfg.keys.toList()) {
-      cfg[k] = x.getString('cfg_$k') ?? cfg[k]!;
-    }
-    if (mounted) setState(() => p = x);
+    SharedPreferences.getInstance().then((x) {
+      for (final k in cfg.keys.toList()) {
+        cfg[k] = x.getString('cfg_$k') ?? cfg[k]!;
+      }
+      setState(() => p = x);
+    });
   }
 
   void setCfg(String k, String v) {
@@ -82,7 +75,14 @@ class _AeroAppState extends State<AeroApp> {
       darkTheme: theme(Brightness.dark),
       home: p == null
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-          : Home(cfg: cfg, setCfg: setCfg, prefs: p!, err: storageErr),
+          : AuthGate(
+              onUsername: (u) {
+                if (cfg['pseudo'] != u) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) => setCfg('pseudo', u));
+                }
+              },
+              child: Home(cfg: cfg, setCfg: setCfg, prefs: p!),
+            ),
     );
   }
 }
@@ -157,8 +157,7 @@ class Home extends StatefulWidget {
   final Map<String, String> cfg;
   final void Function(String, String) setCfg;
   final SharedPreferences prefs;
-  final String? err;
-  const Home({super.key, required this.cfg, required this.setCfg, required this.prefs, this.err});
+  const Home({super.key, required this.cfg, required this.setCfg, required this.prefs});
   @override
   State<Home> createState() => _HomeState();
 }
@@ -174,10 +173,6 @@ class _HomeState extends State<Home> {
   @override
   void initState() {
     super.initState();
-    if (widget.err != null) {
-      WidgetsBinding.instance.addPostFrameCallback(
-          (_) => snack('Stockage indisponible, les données ne seront pas conservées : ${widget.err}'));
-    }
     final f = p.getString('flights');
     if (f != null) {
       try {
@@ -193,10 +188,46 @@ class _HomeState extends State<Home> {
         plan = (jsonDecode(pl) as Map).cast<String, dynamic>();
       } catch (_) {}
     }
+    scheduleSync();
   }
 
-  void saveFlights() =>
-      p.setString('flights', jsonEncode(flights.map((f) => f.toJson()).toList()));
+  // Synchronise heures de vol, trajets favoris et SimBrief vers le profil en ligne
+  Timer? _syncT;
+  void scheduleSync() {
+    _syncT?.cancel();
+    _syncT = Timer(const Duration(milliseconds: 1500), syncProfile);
+  }
+
+  void syncProfile() {
+    final c = <String, int>{};
+    for (final f in flights) {
+      final r = '${f.dep}-${f.arr}';
+      c[r] = (c[r] ?? 0) + 1;
+    }
+    final top = (c.entries.toList()..sort((a, b) => b.value.compareTo(a.value)))
+        .take(3)
+        .map((e) => e.key)
+        .toList();
+    syncStats(flights.fold<int>(0, (s, f) => s + f.dur), top, widget.cfg['sb'] ?? '');
+  }
+
+  @override
+  void didUpdateWidget(Home old) {
+    super.didUpdateWidget(old);
+    scheduleSync();
+  }
+
+  @override
+  void dispose() {
+    _syncT?.cancel();
+    super.dispose();
+  }
+
+  void saveFlights() {
+    p.setString('flights', jsonEncode(flights.map((f) => f.toJson()).toList()));
+    scheduleSync();
+  }
+
   void snack(String m) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
@@ -208,7 +239,7 @@ class _HomeState extends State<Home> {
     final id = widget.cfg['sb']!.trim();
     if (id.isEmpty) {
       snack('Entre d’abord ton identifiant SimBrief dans Réglages.');
-      setState(() => tab = 4);
+      setState(() => tab = 5);
       return;
     }
     setState(() => loading = true);
@@ -671,12 +702,13 @@ class _HomeState extends State<Home> {
 
   @override
   Widget build(BuildContext context) {
-    const titles = ['', 'Carnet de vol', 'Plan de vol', 'Outils', 'Réglages'];
+    const titles = ['', 'Carnet de vol', 'Plan de vol', 'Outils', 'Communauté', 'Réglages'];
     final pages = [
       homePage(),
       carnetPage(),
       planPage(),
       toolsPage(),
+      const SocialPage(),
       SettingsPage(
         cfg: widget.cfg,
         setCfg: widget.setCfg,
@@ -710,6 +742,7 @@ class _HomeState extends State<Home> {
           NavigationDestination(icon: Icon(Icons.menu_book_outlined), label: 'Carnet'),
           NavigationDestination(icon: Icon(Icons.flight_takeoff), label: 'SimBrief'),
           NavigationDestination(icon: Icon(Icons.build_outlined), label: 'Outils'),
+          NavigationDestination(icon: Icon(Icons.people_outline), label: 'Amis'),
           NavigationDestination(icon: Icon(Icons.settings_outlined), label: 'Réglages'),
         ],
       ),
@@ -727,7 +760,6 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  late final pseudo = TextEditingController(text: widget.cfg['pseudo']);
   late final sb = TextEditingController(text: widget.cfg['sb']);
 
   Widget h(String t) => Padding(
@@ -737,11 +769,31 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 32), children: [
-      h('Profil'),
-      TextField(
-          controller: pseudo,
-          decoration: const InputDecoration(labelText: 'Pseudo'),
-          onChanged: (v) => widget.setCfg('pseudo', v)),
+      h('Compte'),
+      Card(
+        elevation: 0,
+        shape: cardShape,
+        child: Column(children: [
+          ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: Text('@${widget.cfg['pseudo']}'),
+            subtitle: const Text('Voir et modifier mon profil'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              final uid = currentUid();
+              if (uid != null) {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => ProfileView(uid: uid)));
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('Se déconnecter'),
+            onTap: signOut,
+          ),
+        ]),
+      ),
       h('SimBrief'),
       TextField(
           controller: sb,
