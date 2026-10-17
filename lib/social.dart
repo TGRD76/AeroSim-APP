@@ -9,15 +9,16 @@ import 'firebase_config.dart';
 
 final _db = FirebaseFirestore.instance;
 final _auth = FirebaseAuth.instance;
-const _spinner = _Loading();
+const _spinner = Loading();
 
-class _Loading extends StatefulWidget {
-  const _Loading();
+class Loading extends StatefulWidget {
+  final String label;
+  const Loading([this.label = '']);
   @override
-  State<_Loading> createState() => _LoadingState();
+  State<Loading> createState() => _LoadingState();
 }
 
-class _LoadingState extends State<_Loading> {
+class _LoadingState extends State<Loading> {
   bool slow = false;
   Timer? t;
   @override
@@ -42,6 +43,10 @@ class _LoadingState extends State<_Loading> {
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const CircularProgressIndicator(),
+            if (widget.label.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(widget.label, textAlign: TextAlign.center),
+            ],
             if (slow) ...[
               const SizedBox(height: 24),
               const Text('Le chargement est long. Vérifie ta connexion internet.',
@@ -172,7 +177,7 @@ class AuthGate extends StatelessWidget {
       stream: _auth.authStateChanges(),
       builder: (c, s) {
         if (s.hasError) return _ErrorPage(s.error!);
-        if (s.connectionState == ConnectionState.waiting) return _spinner;
+        if (s.connectionState == ConnectionState.waiting) return const Loading('Connexion au compte…');
         final u = s.data;
         if (u == null) return const LoginPage();
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -180,7 +185,7 @@ class AuthGate extends StatelessWidget {
           stream: _db.collection('users').doc(u.uid).snapshots(),
           builder: (c, d) {
             if (d.hasError) return _ErrorPage(d.error!);
-            if (!d.hasData) return _spinner;
+            if (!d.hasData) return const Loading('Chargement du profil…');
             final snap = d.data!;
             final name = snap.data()?['username'] as String?;
             if (name == null || name.isEmpty) {
