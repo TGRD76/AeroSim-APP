@@ -1,7 +1,7 @@
-name: carnet_de_vol
-description: Carnet de vol pour simulation de vol
+name: aerosim_app
+description: AeroSimAPP - carnet de vol et plans SimBrief
 publish_to: 'none'
-version: 1.0.0+1
+version: 2.0.0+2
 
 environment:
   sdk: ^3.0.0
@@ -10,10 +10,19 @@ dependencies:
   flutter:
     sdk: flutter
   shared_preferences: ^2.2.0
+  http: ^1.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.1
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/logo.png"
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/logo.png
