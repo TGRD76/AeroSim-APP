@@ -20,4 +20,13 @@ sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' build_app/andro
 cd build_app
 flutter pub get
 dart run flutter_launcher_icons
-flutter build apk --release
+flutter analyze --no-fatal-infos --no-fatal-warnings > analyze.log 2>&1 || true
+if ! flutter build apk --release > build.log 2>&1; then
+  echo "=========== ERREURS D'ANALYSE ==========="
+  grep -E " error " analyze.log | head -30 || true
+  echo "=========== ERREURS DE BUILD ==========="
+  grep -E -B3 -A8 "Error:|error:|What went wrong" build.log | head -100 || true
+  echo "=========== FIN : copie tout ce qui est au-dessus ==========="
+  exit 1
+fi
+tail -5 build.log
