@@ -15,19 +15,9 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - name: Créer le projet Android
-        run: flutter create --org com.tgrd76 --project-name carnet_de_vol --platforms=android build_app
-      - name: Copier mon code
-        run: |
-          cp pubspec.yaml build_app/pubspec.yaml
-          rm -rf build_app/lib build_app/test
-          cp -r lib build_app/lib
-      - name: Construire l'APK
-        working-directory: build_app
-        run: |
-          flutter pub get
-          flutter build apk --release
+      - name: Construire
+        run: bash build.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: carnet-de-vol-apk
+          name: aerosimapp-apk
           path: build_app/build/app/outputs/flutter-apk/app-release.apk
