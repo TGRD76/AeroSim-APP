@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,7 +9,75 @@ import 'firebase_config.dart';
 
 final _db = FirebaseFirestore.instance;
 final _auth = FirebaseAuth.instance;
-const _spinner = Scaffold(body: Center(child: CircularProgressIndicator()));
+const _spinner = _Loading();
+
+class _Loading extends StatefulWidget {
+  const _Loading();
+  @override
+  State<_Loading> createState() => _LoadingState();
+}
+
+class _LoadingState extends State<_Loading> {
+  bool slow = false;
+  Timer? t;
+  @override
+  void initState() {
+    super.initState();
+    t = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => slow = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const CircularProgressIndicator(),
+            if (slow) ...[
+              const SizedBox(height: 24),
+              const Text('Le chargement est long. Vérifie ta connexion internet.',
+                  textAlign: TextAlign.center),
+              TextButton(onPressed: signOut, child: const Text('Se déconnecter')),
+            ],
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorPage extends StatelessWidget {
+  final Object error;
+  const _ErrorPage(this.error);
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.error_outline, size: 48),
+            const SizedBox(height: 12),
+            const Text('Une erreur est survenue', style: TextStyle(fontSize: 18)),
+            const SizedBox(height: 12),
+            SelectableText('$error', textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            TextButton(onPressed: signOut, child: const Text('Se déconnecter')),
+          ]),
+        ),
+      ),
+    );
+  }
+}
 
 String _dur(int m) => '${m ~/ 60}h${(m % 60).toString().padLeft(2, '0')}';
 
@@ -102,6 +171,7 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: _auth.authStateChanges(),
       builder: (c, s) {
+        if (s.hasError) return _ErrorPage(s.error!);
         if (s.connectionState == ConnectionState.waiting) return _spinner;
         final u = s.data;
         if (u == null) return const LoginPage();
@@ -109,6 +179,7 @@ class AuthGate extends StatelessWidget {
           key: ValueKey(u.uid),
           stream: _db.collection('users').doc(u.uid).snapshots(),
           builder: (c, d) {
+            if (d.hasError) return _ErrorPage(d.error!);
             if (!d.hasData) return _spinner;
             final snap = d.data!;
             final name = snap.data()?['username'] as String?;
