@@ -18,7 +18,10 @@ const brand = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight);
 
-void main() => runApp(const AeroApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const AeroApp());
+}
 
 class AeroApp extends StatefulWidget {
   const AeroApp({super.key});
@@ -30,15 +33,27 @@ class _AeroAppState extends State<AeroApp> {
   SharedPreferences? p;
   final Map<String, String> cfg = {'pseudo': '', 'sb': '', 'accent': 'Bleu', 'mode': '2'};
 
+  String? storageErr;
+
   @override
   void initState() {
     super.initState();
-    SharedPreferences.getInstance().then((x) {
-      for (final k in cfg.keys.toList()) {
-        cfg[k] = x.getString('cfg_$k') ?? cfg[k]!;
-      }
-      setState(() => p = x);
-    });
+    load();
+  }
+
+  Future<void> load() async {
+    SharedPreferences x;
+    try {
+      x = await SharedPreferences.getInstance().timeout(const Duration(seconds: 5));
+    } catch (e) {
+      storageErr = '$e';
+      SharedPreferences.setMockInitialValues({});
+      x = await SharedPreferences.getInstance();
+    }
+    for (final k in cfg.keys.toList()) {
+      cfg[k] = x.getString('cfg_$k') ?? cfg[k]!;
+    }
+    if (mounted) setState(() => p = x);
   }
 
   void setCfg(String k, String v) {
@@ -67,7 +82,7 @@ class _AeroAppState extends State<AeroApp> {
       darkTheme: theme(Brightness.dark),
       home: p == null
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-          : Home(cfg: cfg, setCfg: setCfg, prefs: p!),
+          : Home(cfg: cfg, setCfg: setCfg, prefs: p!, err: storageErr),
     );
   }
 }
@@ -142,7 +157,8 @@ class Home extends StatefulWidget {
   final Map<String, String> cfg;
   final void Function(String, String) setCfg;
   final SharedPreferences prefs;
-  const Home({super.key, required this.cfg, required this.setCfg, required this.prefs});
+  final String? err;
+  const Home({super.key, required this.cfg, required this.setCfg, required this.prefs, this.err});
   @override
   State<Home> createState() => _HomeState();
 }
@@ -158,6 +174,10 @@ class _HomeState extends State<Home> {
   @override
   void initState() {
     super.initState();
+    if (widget.err != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+          (_) => snack('Stockage indisponible, les données ne seront pas conservées : ${widget.err}'));
+    }
     final f = p.getString('flights');
     if (f != null) {
       try {
