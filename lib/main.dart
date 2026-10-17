@@ -54,8 +54,7 @@ class _BootState extends State<Boot> {
                               textAlign: TextAlign.center)))));
         }
         if (s.connectionState != ConnectionState.done) {
-          return const MaterialApp(
-              home: Scaffold(body: Center(child: CircularProgressIndicator())));
+          return const MaterialApp(home: Loading('Démarrage de Firebase… (v3.1)'));
         }
         return const AeroApp();
       },
@@ -71,17 +70,30 @@ class AeroApp extends StatefulWidget {
 
 class _AeroAppState extends State<AeroApp> {
   SharedPreferences? p;
+  String? perr;
   final Map<String, String> cfg = {'pseudo': '', 'sb': '', 'accent': 'Bleu', 'mode': '2'};
 
   @override
   void initState() {
     super.initState();
-    SharedPreferences.getInstance().then((x) {
+    loadPrefs().then((x) {
       for (final k in cfg.keys.toList()) {
         cfg[k] = x.getString('cfg_$k') ?? cfg[k]!;
       }
       setState(() => p = x);
     });
+  }
+
+  // Si le stockage du téléphone ne répond pas en 5 s, on ouvre l'appli quand même
+  // (données non conservées) au lieu de rester bloqué sur le chargement.
+  Future<SharedPreferences> loadPrefs() async {
+    try {
+      return await SharedPreferences.getInstance().timeout(const Duration(seconds: 5));
+    } catch (e) {
+      perr = '$e';
+      SharedPreferences.setMockInitialValues({});
+      return SharedPreferences.getInstance();
+    }
   }
 
   void setCfg(String k, String v) {
@@ -108,8 +120,21 @@ class _AeroAppState extends State<AeroApp> {
       themeMode: [ThemeMode.system, ThemeMode.light, ThemeMode.dark][mi],
       theme: theme(Brightness.light),
       darkTheme: theme(Brightness.dark),
+      builder: (c, child) => Column(children: [
+        Expanded(child: child!),
+        if (perr != null)
+          Material(
+              color: const Color(0xFFB91C1C),
+              child: SafeArea(
+                  top: false,
+                  child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                          'Stockage indisponible, données non conservées : $perr',
+                          style: const TextStyle(color: Colors.white, fontSize: 12))))),
+      ]),
       home: p == null
-          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          ? const Loading('Chargement des réglages…')
           : AuthGate(
               onUsername: (u) {
                 if (cfg['pseudo'] != u) {
