@@ -22,10 +22,45 @@ const brand = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight);
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: firebaseOptions);
-  runApp(const AeroApp());
+  runApp(const Boot());
+}
+
+// Démarre Firebase et affiche l'erreur à l'écran si ça échoue ou dépasse 15 s
+class Boot extends StatefulWidget {
+  const Boot({super.key});
+  @override
+  State<Boot> createState() => _BootState();
+}
+
+class _BootState extends State<Boot> {
+  late final Future<void> init = Firebase.initializeApp(options: firebaseOptions)
+      .timeout(const Duration(seconds: 15))
+      .then((_) {});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<void>(
+      future: init,
+      builder: (c, s) {
+        if (s.hasError) {
+          return MaterialApp(
+              home: Scaffold(
+                  body: Center(
+                      child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: SelectableText('Erreur de démarrage :\n${s.error}',
+                              textAlign: TextAlign.center)))));
+        }
+        if (s.connectionState != ConnectionState.done) {
+          return const MaterialApp(
+              home: Scaffold(body: Center(child: CircularProgressIndicator())));
+        }
+        return const AeroApp();
+      },
+    );
+  }
 }
 
 class AeroApp extends StatefulWidget {
