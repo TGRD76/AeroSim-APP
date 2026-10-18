@@ -17,11 +17,15 @@ sed -i 's|<application|<uses-permission android:name="android.permission.INTERNE
 sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' build_app/android/app/build.gradle.kts 2>/dev/null || true
 sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' build_app/android/app/build.gradle 2>/dev/null || true
 
+# Désactive la réduction du code (R8) : elle casse shared_preferences en version release
+sed -i 's/signingConfig = signingConfigs.getByName("debug")/signingConfig = signingConfigs.getByName("debug")\n            isMinifyEnabled = false\n            isShrinkResources = false/' build_app/android/app/build.gradle.kts 2>/dev/null || true
+sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.debug\n            minifyEnabled false\n            shrinkResources false/' build_app/android/app/build.gradle 2>/dev/null || true
+
 cd build_app
 flutter pub get
 dart run flutter_launcher_icons
 flutter analyze --no-fatal-infos --no-fatal-warnings > analyze.log 2>&1 || true
-if ! flutter build apk --release > build.log 2>&1; then
+if ! flutter build apk --release --no-shrink > build.log 2>&1; then
   echo "=========== ERREURS D'ANALYSE ==========="
   grep -E " error " analyze.log | head -30 || true
   echo "=========== ERREURS DE BUILD ==========="
